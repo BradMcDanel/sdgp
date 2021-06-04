@@ -5,7 +5,7 @@ from functools import partial
 from types import SimpleNamespace
 import resnet
 
-arch = partial(resnet.resnet18, num_models=1)
+arch = partial(resnet.resnet18)
 
 _cfg = {
     'data_folder': '/hdd1/datasets',
@@ -19,7 +19,7 @@ _cfg = {
     'weight_decay': 5e-4,
     'print_freq': 10,
     'gpu': None,
-    'verbose': False,
+    'verbose': True,
 }
 
 cfg = SimpleNamespace(**_cfg)
