@@ -6,4 +6,4 @@
 - Next, install all required library dependencies with `pip -r requirements.txt` (this will take several minutes). Now, we have our python environment setup and are ready to start running code. Restart your machine to ensure that PyTorch was installed correctly.
 
 ## Training a Neural Network
-
+Run: `python train_cifar10.py cfg/resnet18_cifar10.py` to train the CIFAR-10 network. This training would be quite slow on a CPU, but you should be able to start training and see the loss decrease over time.
