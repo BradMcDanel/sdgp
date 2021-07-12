@@ -4,7 +4,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from stochastic import StochasticConv2d
+from gsr import GSRConv2d
+
 
 class BasicBlock(nn.Module):
     expansion = 1
@@ -33,26 +34,24 @@ class BasicBlock(nn.Module):
         out = F.relu(out)
         return out
 
-class BasicStochasticBlock(nn.Module):
+class GSRBasicBlock(nn.Module):
     expansion = 1
 
-    def __init__(self, in_planes, planes, stochastic_params, stride=1):
-        super(BasicStochasticBlock, self).__init__()
-        self.conv1 = StochasticConv2d(
-            in_planes, planes, kernel_size=3, stride=stride, padding=1,
-            bias=False, stochastic_params=stochastic_params)
+    def __init__(self, quant_params, in_planes, planes, stride=1):
+        super(GSRBasicBlock, self).__init__()
+        self.conv1 = GSRConv2d(quant_params, in_planes, planes, kernel_size=3,
+                               stride=stride, padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(planes)
-        self.conv2 = StochasticConv2d(
-            planes, planes, kernel_size=3, stride=1, padding=1, bias=False,
-            stochastic_params=stochastic_params)
+        self.conv2 = GSRConv2d(quant_params, planes, planes, kernel_size=3,
+                               stride=1, padding=1, bias=False)
+
         self.bn2 = nn.BatchNorm2d(planes)
 
         self.shortcut = nn.Sequential()
         if stride != 1 or in_planes != self.expansion*planes:
             self.shortcut = nn.Sequential(
-                StochasticConv2d(
-                    in_planes, self.expansion*planes, kernel_size=1,
-                    stride=stride, bias=False, stochastic_params=stochastic_params),
+                GSRConv2d(quant_params, in_planes, self.expansion*planes,
+                          kernel_size=1, stride=stride, bias=False),
                 nn.BatchNorm2d(self.expansion*planes)
             )
 
@@ -129,30 +128,29 @@ class ResNet(nn.Module):
 
 
 
-class StochasticResNet(nn.Module):
-    def __init__(self, block, num_blocks, stochastic_params, num_classes=10):
-        super(StochasticResNet, self).__init__()
+class GSRResNet(nn.Module):
+    def __init__(self, quant_params, block, num_blocks, num_classes=10):
+        super(GSRResNet, self).__init__()
         self.in_planes = 64
 
         self.conv1 = nn.Conv2d(3, 64, kernel_size=3,
                                stride=1, padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(64)
-        self.layer1 = self._make_layer(block, 64, num_blocks[0],
-                                       stochastic_params, stride=1)
-        self.layer2 = self._make_layer(block, 128, num_blocks[1],
-                                       stochastic_params, stride=2)
-        self.layer3 = self._make_layer(block, 256, num_blocks[2],
-                                       stochastic_params, stride=2)
-        self.layer4 = self._make_layer(block, 512, num_blocks[3],
-                                       stochastic_params, stride=2)
+        self.layer1 = self._make_layer(quant_params, block, 64, num_blocks[0],
+                                       stride=1)
+        self.layer2 = self._make_layer(quant_params, block, 128, num_blocks[1],
+                                       stride=2)
+        self.layer3 = self._make_layer(quant_params, block, 256, num_blocks[2],
+                                       stride=2)
+        self.layer4 = self._make_layer(quant_params, block, 512, num_blocks[3],
+                                       stride=2)
         self.linear = nn.Linear(512*block.expansion, num_classes)
 
-    def _make_layer(self, block, planes, num_blocks, stochastic_params, stride):
+    def _make_layer(self, quant_params, block, planes, num_blocks, stride):
         strides = [stride] + [1]*(num_blocks-1)
         layers = []
         for stride in strides:
-            layers.append(block(self.in_planes, planes, stochastic_params,
-                                stride))
+            layers.append(block(quant_params, self.in_planes, planes, stride))
             self.in_planes = planes * block.expansion
         return nn.Sequential(*layers)
 
@@ -167,19 +165,13 @@ class StochasticResNet(nn.Module):
         return self.linear(out)
 
 
-def stochastic_resnet18(block=None, stochastic_params=None):
+def gsr_resnet18(quant_params, block=None):
     if block == None:
-        block = BasicBlock
+        block = GSRBasicBlock
     
-    return StochasticResNet(block, [2, 2, 2, 2], stochastic_params)
+    return GSRResNet(quant_params, block, [2, 2, 2, 2])
 
 def resnet18(block=None):
     if block == None:
         block = BasicBlock
     return ResNet(block, [2, 2, 2, 2])
-
-# def resnet50(block=None, num_models=1):
-#     if block == None:
-#         block = Bottleneck
-#     return ResNet(block, [3, 4, 6, 3], num_models=num_models)
-

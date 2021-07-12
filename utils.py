@@ -2,9 +2,21 @@ import time
 import os
 import math
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 import torchvision
 import torchvision.transforms as transforms
+
+
+def make_pair(x):
+    if type(x) == int or type(x) == float:
+        return x, x
+    
+    return x
+
+
+def nongrad_param(x):
+    return nn.Parameter(torch.tensor([x]), requires_grad=False)
 
 ##################
 # dataset        #

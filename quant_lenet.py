@@ -6,6 +6,13 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torchvision import datasets, transforms
 from torch.optim.lr_scheduler import StepLR
+import matplotlib.pyplot as plt
+
+from gsr import GSRConv2d
+
+
+def nongrad_param(x):
+    return nn.Parameter(x, requires_grad=False)
 
 def make_pair(x):
     if type(x) == int or type(x) == float:
@@ -13,85 +20,69 @@ def make_pair(x):
     
     return x
 
-
-class LinearQuantization(torch.autograd.Function):
+class StochasticPruning(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, x, sf, bins):
-        max_value = sf * (bins - 1)
-        x = sf * torch.floor(x / sf + 0.5)
-        x = torch.clamp(x, -max_value, max_value)
+    def forward(ctx, x, percentile): 
+        percentile = torch.Tensor([percentile])  
+        ctx.save_for_backward(percentile)  
         return x
 
     @staticmethod
     def backward(ctx, grad_output):
-        return grad_output, None, None
- 
+        # print((grad_output == 0).sum() / grad_output.nelement())
+        # plt.hist(grad_output.view(-1).cpu().tolist(), bins=100)
+        # plt.xscale('log')
+        # plt.show()
+        # return grad_output, None
 
-class QuantConv2d(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size, stride=1,
-                 padding=0, dilation=1, groups=1, bias=True,
-                 padding_mode='zeros'):
-        super(QuantConv2d, self).__init__()
+        percentile, = ctx.saved_tensors
+        tau = torch.quantile(grad_output.abs(), percentile.item())
+        tau = tau.item()
+        r = torch.rand(grad_output.shape, device=grad_output.device)
+        ind_a = grad_output.abs() < tau
+        ind_b = grad_output.abs() < (tau * r)
+        ind_c = grad_output < 0
 
-        self.in_channels = in_channels
-        self.out_channels = out_channels
-        self.kernel_size = make_pair(kernel_size)
-        self.stride = stride
-        self.padding = padding
-        self.dilation = dilation
-        self.groups = groups
+        grad_output[ind_a & ind_b]  = 0
+        grad_output[ind_a & (~ind_b) & ind_c] = -tau
+        grad_output[ind_a & (~ind_b) & (~ind_c)] = tau
 
-        if bias:
-            self.bias = nn.Parameter(torch.Tensor(out_channels).zero_())
-        else:
-            self.bias = None
-        
-        shape = out_channels, in_channels // groups, *self.kernel_size
-        self.weight = nn.Parameter(torch.Tensor(*shape))
-        nn.init.kaiming_uniform_(self.weight, nonlinearity='relu')
+        # plt.hist(grad_output.view(-1).cpu().tolist(), bins=100)
+        # plt.show()
+        # no_change = (grad_output.abs() > tau).sum()
+        # print('--------')
+        # print(tau, percentile)
+        # print(no_change / grad_output.nelement())
+        # print(grad_output.shape)
+        # print('---------')
 
-    def forward(self, x):
-        BINS = 8 # hardcode the number of bins for now
-        MAX_CLIP = 0.95 # to clip large outlier values
+        return grad_output, None
 
-        # Find scale factors to use
-        x_max = MAX_CLIP * x.abs().max()
-        x_sf = x_max / BINS
-        w_max = MAX_CLIP * self.weight.abs().max()
-        w_sf = w_max / BINS
-
-        # Perform quantization
-        x = LinearQuantization.apply(x, x_sf, BINS)
-        w = LinearQuantization.apply(self.weight, w_sf, BINS)
-
-        # Perform convolution with quantized tensors
-        x = F.conv2d(x, w, self.bias, self.stride, self.padding,
-                     self.dilation, self.groups)
-
-        return x
 
 
 class Net(nn.Module):
-    def __init__(self):
+    def __init__(self, quant_params):
         super(Net, self).__init__()
-        self.conv1 = QuantConv2d(1, 32, 3, 1)
-        self.conv2 = QuantConv2d(32, 64, 3, 1)
-        self.dropout1 = nn.Dropout(0.25)
-        self.dropout2 = nn.Dropout(0.5)
+        self.conv1 = nn.Conv2d(1, 32, 3, 1)
+        self.conv2 = GSRConv2d(quant_params, 32, 64, 3, 1)
+        self.bn1 = nn.BatchNorm2d(32)
+        self.bn2 = nn.BatchNorm2d(64)
         self.fc1 = nn.Linear(9216, 128)
         self.fc2 = nn.Linear(128, 10)
 
     def forward(self, x):
         x = self.conv1(x)
+        x = StochasticPruning.apply(x, 0.6)
+        x = self.bn1(x)
         x = F.relu(x)
         x = self.conv2(x)
+        x = StochasticPruning.apply(x, 0.6)
+        x = self.bn2(x)
         x = F.relu(x)
         x = F.max_pool2d(x, 2)
-        x = self.dropout1(x)
         x = torch.flatten(x, 1)
         x = self.fc1(x)
         x = F.relu(x)
-        x = self.dropout2(x)
         x = self.fc2(x)
         output = F.log_softmax(x, dim=1)
         return output
@@ -176,14 +167,21 @@ def main():
         transforms.ToTensor(),
         transforms.Normalize((0.1307,), (0.3081,))
         ])
-    dataset1 = datasets.MNIST('../data', train=True, download=True,
-                       transform=transform)
-    dataset2 = datasets.MNIST('../data', train=False,
-                       transform=transform)
-    train_loader = torch.utils.data.DataLoader(dataset1,**train_kwargs)
+    dataset1 = datasets.FashionMNIST('../data', train=True, download=True,
+                                     transform=transform)
+    dataset2 = datasets.FashionMNIST('../data', train=False,
+                                     transform=transform)
+    train_loader = torch.utils.data.DataLoader(dataset1, **train_kwargs)
     test_loader = torch.utils.data.DataLoader(dataset2, **test_kwargs)
 
-    model = Net().to(device)
+    quant_params = {
+        'w_bits': 3,
+        'x_bits': 3,
+        'g_bits': 5,
+        'g_groupsize': 4,
+        'g_nonzero': 1,
+    }
+    model = Net(quant_params).to(device)
     optimizer = optim.Adadelta(model.parameters(), lr=args.lr)
 
     scheduler = StepLR(optimizer, step_size=1, gamma=args.gamma)

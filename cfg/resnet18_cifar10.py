@@ -9,7 +9,7 @@ arch = partial(resnet.resnet18)
 
 _cfg = {
     'data_folder': '/hdd1/datasets',
-    'save_path': 'saved_models/cifar10_resnet18_1m.pth',
+    'save_path': 'saved_models/cifar10_resnet18.pth',
     'arch': arch,
     'workers': 4,
     'momentum': 0.9,

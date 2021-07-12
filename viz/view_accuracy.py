@@ -1,3 +1,6 @@
+import sys
+sys.path.insert(0, '..')
+
 import matplotlib
 import matplotlib.pyplot as plt
 SMALL_SIZE = 14
@@ -20,14 +23,17 @@ plt.rc('axes', titlesize=BIGGER_SIZE)  # fontsize of the figure titl
 import torch
 
 
-baseline = torch.load('saved_models/cifar10_resnet18_1m.pth')
+baseline = torch.load('../saved_models/cifar10_resnet18_1m.pth')
+gsr_a = torch.load('../saved_models/cifar10_resnet18_4_4_4_1_4.pth')
 # prune50 = torch.load('saved_models/cifar10_resnet18_prune_50.pth')
-prune75 = torch.load('saved_models/cifar10_resnet18_stoc_50.pth')
+# prune75 = torch.load('saved_models/cifar10_resnet18_stoc_50.pth')
 # prune75stoc = torch.load('saved_models/cifar10_resnet18_prune_75_stoc.pth')
 
 plt.plot(baseline['accs'], '-', color='k', linewidth=2, label='Baseline')
+plt.plot(gsr_a['accs'], '-', color='r', linewidth=2, label='GSR(4/4/4/1/4)')
+# plt.plot(baseline['accs'], '-', color='k', linewidth=2, label='Baseline')
 # plt.plot(prune50['accs'], '-', color='r', linewidth=2, label ='50% gradients pruned')
-plt.plot(prune75['accs'], '-', color='b', linewidth=2, label ='80% Stochastic Pruning (w/d/g)')
+# plt.plot(prune75['accs'], '-', color='b', linewidth=2, label ='80% Stochastic Pruning (w/d/g)')
 # plt.plot(prune75stoc['accs'], '-', color='g', linewidth=2, label ='75% gradients pruned stoch')
 plt.title('ResNet-18 CIFAR-10')
 plt.title('ResNet-18 CIFAR-10')
