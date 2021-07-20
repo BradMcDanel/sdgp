@@ -23,14 +23,25 @@ plt.rc('axes', titlesize=BIGGER_SIZE)  # fontsize of the figure titl
 import torch
 
 
-baseline = torch.load('../saved_models/cifar10_resnet18_1m.pth')
-gsr_a = torch.load('../saved_models/cifar10_resnet18_4_4_4_1_4.pth')
+baseline = torch.load('../saved_models/cifar10_resnet18.pth')
+# quant = torch.load('../saved_models/cifar10_resnet18_5_5_-1_-1_-1.pth')
+# sr = torch.load('../saved_models/cifar10_resnet18_5_5_5_8_8.pth')
+sr2 = torch.load('../saved_models/cifar10_resnet18_5_5_8_1_1.pth')
+gsr_2_4 = torch.load('../saved_models/cifar10_resnet18_5_5_8_2_4.pth')
+gsr_2_4_noscale = torch.load('../saved_models/cifar10_resnet18_5_5_8_2_4_noscale.pth')
+gsr_2_4_max = torch.load('../saved_models/cifar10_resnet18_5_5_8_2_4_max.pth')
+
 # prune50 = torch.load('saved_models/cifar10_resnet18_prune_50.pth')
 # prune75 = torch.load('saved_models/cifar10_resnet18_stoc_50.pth')
 # prune75stoc = torch.load('saved_models/cifar10_resnet18_prune_75_stoc.pth')
 
-plt.plot(baseline['accs'], '-', color='k', linewidth=2, label='Baseline')
-plt.plot(gsr_a['accs'], '-', color='r', linewidth=2, label='GSR(4/4/4/1/4)')
+plt.plot(baseline['accs'], '-', color='k', linewidth=2, label='Baseline (32/32/32)')
+# plt.plot(quant['accs'], '-', color='g', linewidth=2, label='Forward Quant (5/5/32)')
+# plt.plot(sr['accs'], '-', color='r', linewidth=2, label='Forward+Backward Quant (5/5/5)')
+# plt.plot(sr2['accs'], '-', color='orange', linewidth=2, label='Forward+Backward Quant (5/5/8)')
+plt.plot(gsr_2_4['accs'], '-', color='b', linewidth=2, label='GSR 2:4 + scale (5/5/8)')
+plt.plot(gsr_2_4_noscale['accs'], '-', color='red', linewidth=2, label='GSR 2:4 + no scale (5/5/8)')
+plt.plot(gsr_2_4_max['accs'], '-', color='purple', linewidth=2, label='GSR 2:4 + always max (5/5/8)')
 # plt.plot(baseline['accs'], '-', color='k', linewidth=2, label='Baseline')
 # plt.plot(prune50['accs'], '-', color='r', linewidth=2, label ='50% gradients pruned')
 # plt.plot(prune75['accs'], '-', color='b', linewidth=2, label ='80% Stochastic Pruning (w/d/g)')

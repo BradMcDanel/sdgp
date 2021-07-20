@@ -5,6 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from gsr import GSRConv2d
+from quant_layer import first_conv, last_fc
 
 
 class BasicBlock(nn.Module):
@@ -133,7 +134,7 @@ class GSRResNet(nn.Module):
         super(GSRResNet, self).__init__()
         self.in_planes = 64
 
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=3,
+        self.conv1 = first_conv(3, 64, kernel_size=3,
                                stride=1, padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(64)
         self.layer1 = self._make_layer(quant_params, block, 64, num_blocks[0],
@@ -144,7 +145,7 @@ class GSRResNet(nn.Module):
                                        stride=2)
         self.layer4 = self._make_layer(quant_params, block, 512, num_blocks[3],
                                        stride=2)
-        self.linear = nn.Linear(512*block.expansion, num_classes)
+        self.linear = last_fc(512*block.expansion, num_classes)
 
     def _make_layer(self, quant_params, block, planes, num_blocks, stride):
         strides = [stride] + [1]*(num_blocks-1)
@@ -163,6 +164,11 @@ class GSRResNet(nn.Module):
         out = F.avg_pool2d(out, 4)
         out = out.view(out.size(0), -1)
         return self.linear(out)
+
+    def show_params(self):
+        for m in self.modules():
+            if isinstance(m, GSRConv2d):
+                m.show_params()
 
 
 def gsr_resnet18(quant_params, block=None):

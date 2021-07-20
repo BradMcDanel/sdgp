@@ -27,7 +27,16 @@ if __name__ == '__main__':
     total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
 
     criterion = torch.nn.CrossEntropyLoss().cuda()
-    optimizer = torch.optim.SGD(model.parameters(), cfg.lr, momentum=cfg.momentum, weight_decay=cfg.weight_decay, nesterov=True)
+
+    model_params = []
+    for name, params in model.module.named_parameters():
+        if 'act_alpha' in name:
+            model_params += [{'params': [params], 'lr': 1e-1, 'weight_decay': 1e-4}]
+        elif 'wgt_alpha' in name:
+            model_params += [{'params': [params], 'lr': 2e-2, 'weight_decay': 1e-4}]
+        else:
+            model_params += [{'params': [params]}]
+    optimizer = torch.optim.SGD(model_params, cfg.lr, momentum=cfg.momentum, weight_decay=cfg.weight_decay, nesterov=True)
     train_loader, val_loader = utils.get_cifar10(cfg)
 
     best_acc = 0
