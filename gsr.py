@@ -40,9 +40,9 @@ def GSR(input, bins, num_nonzero, group_size, group_dim, prune_type):
                                torch.tensor([num_nonzero - 1],
                                             device=input.device))
         idx = idx.repeat_interleave(group_size, group_dim+1)
-        mask = rand_mat <= idx
+        mask = input.abs() > idx
 
-        stochastic_scale = 1 # likely 1 is incorrect here
+        # stochastic_scale = 1 # likely 1 is incorrect here
     elif prune_type == PRUNE_TYPE_RANDOM:
         rand_mat = torch.rand(input.shape, device=input.device)
         idx = rand_mat.sort(group_dim+1)[0]
@@ -50,10 +50,10 @@ def GSR(input, bins, num_nonzero, group_size, group_dim, prune_type):
                                torch.tensor([num_nonzero - 1],
                                             device=input.device))
         idx = idx.repeat_interleave(group_size, group_dim+1)
-        mask = input.abs() > idx
+        mask = rand_mat <= idx
 
         # scale based on ratio of num_nonzero
-        stochastic_scale = (group_size / num_nonzero)
+        # stochastic_scale = (group_size / num_nonzero)
     else:
         raise ValueError("Invalid prune_type: {}. Options are: " \
                          "PRUNE_TYPE_RANDOM, PRUNE_TYPE_MAX")
@@ -63,10 +63,13 @@ def GSR(input, bins, num_nonzero, group_size, group_dim, prune_type):
     res[mask] = input[mask]
 
     # apply stochastic scale due to pruning
-    res = res * stochastic_scale
+    scale = input.abs().sum(group_dim + 1) / res.abs().sum(group_dim + 1)
+    res = res * scale.unsqueeze(group_dim + 1)
+    # res = res * stochastic_scale
 
     #stochastically round res
-    res = SR(res, bins)
+    # res = SR(res, bins)
+
     res = res.view(*shape)
 
     return res
