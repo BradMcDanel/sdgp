@@ -46,7 +46,6 @@ class GSRConv2dFunc(Function):
             # pruning across channel dimension
             prune_grad_output = prune.prune(grad_output, conf['prune_type'],
                                             conf['nonzero'], conf['groupsize'])
-            print((prune_grad_output == 0).sum() / prune_grad_output.nelement())
             input_grad = conv_back_input(input.shape, weight, prune_grad_output,
                                          conf["stride"], conf["padding"],
                                          conf["dilation"], conf["groups"],

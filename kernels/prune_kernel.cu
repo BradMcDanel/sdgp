@@ -76,7 +76,7 @@ __global__ void prune_kernel(
   const int32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
   const int32_t c = get_1dim(idx, C, W, H);
 
-  if (c > C / group_size || idx > B*W*H*(C/group_size)) {
+  if (c >= C / group_size || idx >= B*W*H*C) {
     return;
   }
 
