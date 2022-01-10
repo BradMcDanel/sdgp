@@ -23,6 +23,7 @@ if __name__ == '__main__':
         model.cuda()
     else:
         model.cuda(cfg.gpu)
+    print(model)
 
     total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
 
@@ -45,13 +46,14 @@ if __name__ == '__main__':
     accs = []
     macs = []
     for epoch in range(cfg.epochs):
-        utils.adjust_lr(optimizer, epoch, cfg.epochs, cfg.lr, warmup_epochs=0)
+        utils.adjust_lr(optimizer, epoch, cfg.epochs, cfg.lr, warmup_epochs=5)
         utils.train(train_loader, model, criterion, optimizer, epoch, cfg)
-        loss, acc = utils.validate(val_loader, model, criterion, cfg)
+        if epoch % 5 == 0:
+            loss, acc = utils.validate(val_loader, model, criterion, cfg)
+            losses.append(loss)
+            accs.append(acc)
         lr = optimizer.param_groups[0]['lr']
         lrs.append(lr)
-        losses.append(loss)
-        accs.append(acc)
 
         is_best = acc > best_acc
         best_acc = max(acc, best_acc)

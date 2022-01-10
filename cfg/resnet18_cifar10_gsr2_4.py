@@ -6,26 +6,24 @@ import resnet
 from functools import partial
 import gsr
 
-quant_params = {
-    'w_bits': 32,
-    'x_bits': 32,
-    'g_bits': 32,
-    'g_nonzero': 2,
-    'g_groupsize': 4,
+gsr_params = {
+    'nonzero': 2,
+    'groupsize': 4,
     'prune_type': gsr.PRUNE_TYPE_MAX,
 }
 
-arch = partial(resnet.gsr_resnet18, quant_params=quant_params)
+arch = partial(resnet.gsr_resnet18, gsr_params=gsr_params)
+NUM_GPUS = 4
 
 _cfg = {
     'data_folder': '/data/datasets',
-    'save_path': 'saved_models/cifar10_resnet18_bscale.pth',
+    'save_path': 'saved_models/cifar10_resnet18_gsr2_4.pth',
     'arch': arch,
     'workers': 8,
     'momentum': 0.9,
     'epochs': 150,
-    'batch_size': 512*4,
-    'lr': 0.1,
+    'batch_size': 512*NUM_GPUS,
+    'lr': 0.2*NUM_GPUS,
     'weight_decay': 5e-4,
     'print_freq': 10,
     'gpu': None,

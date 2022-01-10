@@ -38,12 +38,12 @@ class BasicBlock(nn.Module):
 class GSRBasicBlock(nn.Module):
     expansion = 1
 
-    def __init__(self, quant_params, in_planes, planes, stride=1):
+    def __init__(self, gsr_params, in_planes, planes, stride=1):
         super(GSRBasicBlock, self).__init__()
-        self.conv1 = GSRConv2d(quant_params, in_planes, planes, kernel_size=3,
+        self.conv1 = GSRConv2d(gsr_params, in_planes, planes, kernel_size=3,
                                stride=stride, padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(planes)
-        self.conv2 = GSRConv2d(quant_params, planes, planes, kernel_size=3,
+        self.conv2 = GSRConv2d(gsr_params, planes, planes, kernel_size=3,
                                stride=1, padding=1, bias=False)
 
         self.bn2 = nn.BatchNorm2d(planes)
@@ -51,7 +51,7 @@ class GSRBasicBlock(nn.Module):
         self.shortcut = nn.Sequential()
         if stride != 1 or in_planes != self.expansion*planes:
             self.shortcut = nn.Sequential(
-                GSRConv2d(quant_params, in_planes, self.expansion*planes,
+                GSRConv2d(gsr_params, in_planes, self.expansion*planes,
                           kernel_size=1, stride=stride, bias=False),
                 nn.BatchNorm2d(self.expansion*planes)
             )
@@ -130,28 +130,28 @@ class ResNet(nn.Module):
 
 
 class GSRResNet(nn.Module):
-    def __init__(self, quant_params, block, num_blocks, num_classes=10):
+    def __init__(self, gsr_params, block, num_blocks, num_classes=10):
         super(GSRResNet, self).__init__()
         self.in_planes = 64
 
-        self.conv1 = first_conv(3, 64, kernel_size=3,
+        self.conv1 = nn.Conv2d(3, 64, kernel_size=3,
                                stride=1, padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(64)
-        self.layer1 = self._make_layer(quant_params, block, 64, num_blocks[0],
+        self.layer1 = self._make_layer(gsr_params, block, 64, num_blocks[0],
                                        stride=1)
-        self.layer2 = self._make_layer(quant_params, block, 128, num_blocks[1],
+        self.layer2 = self._make_layer(gsr_params, block, 128, num_blocks[1],
                                        stride=2)
-        self.layer3 = self._make_layer(quant_params, block, 256, num_blocks[2],
+        self.layer3 = self._make_layer(gsr_params, block, 256, num_blocks[2],
                                        stride=2)
-        self.layer4 = self._make_layer(quant_params, block, 512, num_blocks[3],
+        self.layer4 = self._make_layer(gsr_params, block, 512, num_blocks[3],
                                        stride=2)
         self.linear = last_fc(512*block.expansion, num_classes)
 
-    def _make_layer(self, quant_params, block, planes, num_blocks, stride):
+    def _make_layer(self, gsr_params, block, planes, num_blocks, stride):
         strides = [stride] + [1]*(num_blocks-1)
         layers = []
         for stride in strides:
-            layers.append(block(quant_params, self.in_planes, planes, stride))
+            layers.append(block(gsr_params, self.in_planes, planes, stride))
             self.in_planes = planes * block.expansion
         return nn.Sequential(*layers)
 
@@ -171,11 +171,11 @@ class GSRResNet(nn.Module):
                 m.show_params()
 
 
-def gsr_resnet18(quant_params, block=None):
+def gsr_resnet18(gsr_params, block=None):
     if block == None:
         block = GSRBasicBlock
     
-    return GSRResNet(quant_params, block, [2, 2, 2, 2])
+    return GSRResNet(gsr_params, block, [2, 2, 2, 2])
 
 def resnet18(block=None):
     if block == None:
