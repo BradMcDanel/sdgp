@@ -13,7 +13,7 @@ gsr_params = {
 }
 
 arch = partial(resnet.gsr_resnet18, gsr_params=gsr_params)
-NUM_GPUS = 4
+NUM_GPUS = 1
 
 _cfg = {
     'data_folder': '/data/datasets',

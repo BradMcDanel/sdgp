@@ -8,6 +8,12 @@ prune = load(name="prune", sources=["kernels/prune.cpp", "kernels/prune_kernel.c
 
 
 x = torch.randn(4, 8, 2, 2).cuda()
-y = prune.prune(x, 0, 0, 2, 4)
 
-print(x[:4, -1, -1, -1], y[:4, -1, -1, -1])
+ys = []
+for i in range(1000):
+    y = prune.prune(x, 1, 0, 2, 4)
+    y = (y[:4, -1, -1, -1] == 0)
+    ys.append(y.cpu().numpy().tolist())
+
+ys = torch.tensor(ys).cuda()
+print(ys.sum(dim=0))
