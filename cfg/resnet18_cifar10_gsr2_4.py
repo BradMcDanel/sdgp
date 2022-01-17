@@ -9,11 +9,11 @@ import gsr
 gsr_params = {
     'nonzero': 2,
     'groupsize': 4,
-    'prune_type': gsr.PRUNE_TYPE_MAX,
+    'prune_type': gsr.PRUNE_TYPE_RND,
 }
 
 arch = partial(resnet.gsr_resnet18, gsr_params=gsr_params)
-NUM_GPUS = 1
+NUM_GPUS = 4
 
 _cfg = {
     'data_folder': '/data/datasets',

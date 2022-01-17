@@ -57,7 +57,7 @@ prune_max_channelwise(const scalar_t *__restrict__ x, scalar_t *__restrict__ y,
   const int32_t w = get_2dim(idx, C, W, H);
   const int32_t h = get_3dim(idx, C, W, H);
 
-  if (c >= C / group_size) {
+  if (b >= B || c >= C / group_size || w >= W || h >= H) {
     return;
   }
 
@@ -89,7 +89,7 @@ prune_max_batchwise(const scalar_t *__restrict__ x, scalar_t *__restrict__ y,
   const int32_t w = get_2dim(idx, C, W, H);
   const int32_t h = get_3dim(idx, C, W, H);
 
-  if (b >= B / group_size) {
+  if (b >= B / group_size || c >= C || w >= W || h >= H) {
     return;
   }
 
@@ -121,7 +121,7 @@ prune_rnd_batchwise(const scalar_t *__restrict__ x, scalar_t *__restrict__ y,
   const int32_t w = get_2dim(idx, C, W, H);
   const int32_t h = get_3dim(idx, C, W, H);
 
-  if (b >= B / group_size) {
+  if (b >= B / group_size || c >= C || w >= W || h >= H) {
     return;
   }
 
@@ -173,7 +173,6 @@ prune_rnd_channelwise(const scalar_t *__restrict__ x, scalar_t *__restrict__ y,
   // Randomly select nonzero elements
   for (int32_t i = 0; i < group_size; i++) {
     int32_t ci = c * group_size + i;
-    // printf("idx(%d) %d\n", idx, ci);
     heap[i] = idx_4d(b, ci, w, h, C, W, H);
   }
 
@@ -183,6 +182,9 @@ prune_rnd_channelwise(const scalar_t *__restrict__ x, scalar_t *__restrict__ y,
     for (int32_t j = 0; j < UNROLL; j++) {
       int pos = i * UNROLL + j;
       int32_t r = (int32_t)((&rand.x)[j] * group_size);
+      if (r == group_size) {
+        r = group_size - 1;
+      }
       
       int32_t tmp = heap[pos];
       heap[pos] = heap[r];
@@ -206,9 +208,9 @@ prune_kernel(const scalar_t *__restrict__ x, scalar_t *__restrict__ y,
   const int32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
   const int32_t c = get_1dim(idx, C, W, H);
 
-  // if (idx >= B * W * H * C) {
-  //   return;
-  // }
+  if (idx >= B * W * H * C) {
+    return;
+  }
   auto seeds = at::cuda::philox::unpack(philox_args);
   curandStatePhilox4_32_10_t state;
   curand_init(std::get<0>(seeds), idx, std::get<1>(seeds), &state);
@@ -237,17 +239,10 @@ at::Tensor prune_cuda(const at::Tensor x, const int prune_type,
   const auto size = B * C * W * H;
   auto y = at::zeros_like(x);
   const int threads = 256;
-  int blocks;
-  if (prune_dim == 0) {
-    blocks = ((B / group_size) * C * W * H) / threads + 1;
-  } else if (prune_dim == 1) {
-    blocks = ((C / group_size) * B * W * H) / threads + 1;
-  } else {
-    AT_ERROR("prune_dim must be 0 or 1");
-  }
+  const int blocks = (size + threads - 1) / threads;
 
   auto gen = at::check_generator<at::CUDAGeneratorImpl>(at::cuda::detail::getDefaultCUDAGenerator(x.get_device()));
-  int32_t counter_offset = 1;
+  int32_t counter_offset = group_size;
   at::PhiloxCudaState rng_engine_inputs;
   {
     // See Note [Acquire lock when using random generators]

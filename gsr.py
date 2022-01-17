@@ -57,9 +57,9 @@ class GSRConv2dFunc(Function):
                                          False, False, False)
         if ctx.needs_input_grad[1]:
             # pruning across batch dimension
-            prune_grad_output = prune.prune(grad_output, conf['prune_type'], 
-                                            PRUNE_DIM_BATCH, conf['nonzero'],
-                                            conf['groupsize'])
+            # prune_grad_output = prune.prune(grad_output, conf['prune_type'], 
+            #                                 PRUNE_DIM_BATCH, conf['nonzero'],
+            #                                 conf['groupsize'])
             weight_grad = conv_back_weight(input, weight.shape, grad_output,
                                            conf["stride"], conf["padding"],
                                            conf["dilation"], conf["groups"],
