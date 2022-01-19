@@ -15,8 +15,9 @@
 
 #define MAX_GROUP_SIZE 32
 
-#define PRUNE_MAX 0
-#define PRUNE_RND 1
+#define PRUNE_TYPE_MAX 0
+#define PRUNE_TYPE_RND 1
+#define PRUNE_TYPE_STC 2
 
 //#define UINT_MAX (__INT_MAX__ * 2U + 1)
 #define UNROLL 4
@@ -26,31 +27,29 @@
 #define get_1dim(idx, C, W, H) ((idx / (W) / (H)) % (C))
 #define get_2dim(idx, C, W, H) ((idx / (H)) % (W))
 #define get_3dim(idx, C, W, H) (idx % (H))
+#define SWAP(x, y, T) do { T SWAP = x; x = y; y = SWAP; } while (0)
 
 namespace {
 
 
 template <typename scalar_t>
-__device__ void abs_bubble_sort(const scalar_t *__restrict__ vals,
-                                int32_t *idxs, const int32_t size) {
+__device__ void bubble_sort(scalar_t *__restrict__ vals,
+                            int32_t *idxs, const int32_t size) {
   for (int32_t i = 0; i < size; i++) {
     for (int32_t j = 0; j < size - i - 1; j++) {
-      if (abs(vals[idxs[j]]) < abs(vals[idxs[j + 1]])) {
-        int32_t tmp = idxs[j];
-        idxs[j] = idxs[j + 1];
-        idxs[j + 1] = tmp;
+      if (vals[j] < vals[j + 1]) {
+        SWAP(vals[j], vals[j + 1], scalar_t);
+        SWAP(idxs[j], idxs[j + 1], int32_t);
       }
     }
   }
 }
 
-// prune_max_channelwise
 template <typename scalar_t>
 __device__ void
-prune_max_channelwise(const scalar_t *__restrict__ x, scalar_t *__restrict__ y,
-                      const int32_t nonzero, const int32_t group_size,
-                      const int32_t B, const int32_t C, const int32_t W,
-                      const int32_t H) {
+prune_max(const scalar_t *__restrict__ x, scalar_t *__restrict__ y,
+          const int32_t nonzero, const int32_t group_size, const int32_t B,
+          const int32_t C, const int32_t W, const int32_t H) {
   const int32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
   const int32_t b = get_0dim(idx, C, W, H);
   const int32_t c = get_1dim(idx, C, W, H);
@@ -61,103 +60,28 @@ prune_max_channelwise(const scalar_t *__restrict__ x, scalar_t *__restrict__ y,
     return;
   }
 
-  int32_t heap[MAX_GROUP_SIZE];
+  int32_t idxs[MAX_GROUP_SIZE];
+  scalar_t vals[MAX_GROUP_SIZE];
 
   for (int32_t i = 0; i < group_size; i++) {
     int32_t ci = c * group_size + i;
-    heap[i] = idx_4d(b, ci, w, h, C, W, H);
+    idxs[i] = idx_4d(b, ci, w, h, C, W, H);
+    vals[i] = abs(x[idxs[i]]);
   }
 
-  abs_bubble_sort<scalar_t>(x, heap, group_size);
+  bubble_sort<scalar_t>(vals, idxs, group_size);
 
-  // assign nonzero elements to y
   for (int32_t i = 0; i < nonzero; i++) {
-    y[heap[i]] = x[heap[i]];
-  }
-}
-
-// prune_max_batchwise
-template <typename scalar_t>
-__device__ void
-prune_max_batchwise(const scalar_t *__restrict__ x, scalar_t *__restrict__ y,
-                    const int32_t nonzero, const int32_t group_size,
-                    const int32_t B, const int32_t C, const int32_t W,
-                    const int32_t H) {
-  const int32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-  const int32_t b = get_0dim(idx, C, W, H);
-  const int32_t c = get_1dim(idx, C, W, H);
-  const int32_t w = get_2dim(idx, C, W, H);
-  const int32_t h = get_3dim(idx, C, W, H);
-
-  if (b >= B / group_size || c >= C || w >= W || h >= H) {
-    return;
-  }
-
-  int32_t heap[MAX_GROUP_SIZE];
-
-  for (int32_t i = 0; i < group_size; i++) {
-    int32_t bi = b * group_size + i;
-    heap[i] = idx_4d(bi, c, w, h, C, W, H);
-  }
-
-  abs_bubble_sort<scalar_t>(x, heap, group_size);
-
-  // assign nonzero elements to y
-  for (int32_t i = 0; i < nonzero; i++) {
-    y[heap[i]] = x[heap[i]];
+    y[idxs[i]] = x[idxs[i]];
   }
 }
 
 template <typename scalar_t>
 __device__ void
-prune_rnd_batchwise(const scalar_t *__restrict__ x, scalar_t *__restrict__ y,
-                    curandStatePhilox4_32_10_t *state,
-                    const int32_t nonzero, const int32_t group_size,
-                    const int32_t B, const int32_t C, const int32_t W,
-                    const int32_t H) {
-  const int32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-  const int32_t b = get_0dim(idx, C, W, H);
-  const int32_t c = get_1dim(idx, C, W, H);
-  const int32_t w = get_2dim(idx, C, W, H);
-  const int32_t h = get_3dim(idx, C, W, H);
-
-  if (b >= B / group_size || c >= C || w >= W || h >= H) {
-    return;
-  }
-
-  int32_t heap[MAX_GROUP_SIZE];
-
-  for (int32_t i = 0; i < group_size; i++) {
-    int32_t bi = b * group_size + i;
-    heap[i] = idx_4d(bi, c, w, h, C, W, H);
-  }
-
-  // Randomly shuffle the heap
-  for (int32_t i = 0; i < group_size / UNROLL; i++) {
-    float4 rand = curand_uniform4(state);
-    for (int32_t j = 0; j < UNROLL; j++) {
-      int pos = i * UNROLL + j;
-      int32_t r = (int32_t)((&rand.x)[j] * group_size);
-      
-      int32_t tmp = heap[pos];
-      heap[pos] = heap[r];
-      heap[r] = tmp;
-    }
-  }
-
-  // assign nonzero elements to y
-  for (int32_t i = 0; i < nonzero; i++) {
-    y[heap[i]] = x[heap[i]];
-  }
-}
-
-template <typename scalar_t>
-__device__ void
-prune_rnd_channelwise(const scalar_t *__restrict__ x, scalar_t *__restrict__ y,
-                      curandStatePhilox4_32_10_t *state,
-                      const int32_t nonzero, const int32_t group_size,
-                      const int32_t B, const int32_t C, const int32_t W,
-                      const int32_t H) {
+prune_rnd(const scalar_t *__restrict__ x, scalar_t *__restrict__ y,
+          curandStatePhilox4_32_10_t *state, const int32_t nonzero,
+          const int32_t group_size, const int32_t B, const int32_t C,
+          const int32_t W, const int32_t H) {
   const int32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
   const int32_t b = get_0dim(idx, C, W, H);
   const int32_t c = get_1dim(idx, C, W, H);
@@ -168,15 +92,15 @@ prune_rnd_channelwise(const scalar_t *__restrict__ x, scalar_t *__restrict__ y,
     return;
   }
 
-  int32_t heap[MAX_GROUP_SIZE];
+  int32_t idxs[MAX_GROUP_SIZE];
 
   // Randomly select nonzero elements
   for (int32_t i = 0; i < group_size; i++) {
     int32_t ci = c * group_size + i;
-    heap[i] = idx_4d(b, ci, w, h, C, W, H);
+    idxs[i] = idx_4d(b, ci, w, h, C, W, H);
   }
 
-  // Randomly shuffle the heap
+  // Randomly shuffle the idxs
   for (int32_t i = 0; i < group_size / UNROLL; i++) {
     float4 rand = curand_uniform4(state);
     for (int32_t j = 0; j < UNROLL; j++) {
@@ -186,23 +110,62 @@ prune_rnd_channelwise(const scalar_t *__restrict__ x, scalar_t *__restrict__ y,
         r = group_size - 1;
       }
       
-      int32_t tmp = heap[pos];
-      heap[pos] = heap[r];
-      heap[r] = tmp;
+      int32_t tmp = idxs[pos];
+      idxs[pos] = idxs[r];
+      idxs[r] = tmp;
     }
   }
 
   // assign nonzero elements to y
   for (int32_t i = 0; i < nonzero; i++) {
-    y[heap[i]] = x[heap[i]];
+    y[idxs[i]] = x[idxs[i]];
   }
 }
+
+
+template <typename scalar_t>
+__device__ void
+prune_stc(const scalar_t *__restrict__ x, scalar_t *__restrict__ y,
+          curandStatePhilox4_32_10_t *state, const int32_t nonzero,
+          const int32_t group_size, const int32_t B, const int32_t C,
+          const int32_t W, const int32_t H) {
+  const int32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+  const int32_t b = get_0dim(idx, C, W, H);
+  const int32_t c = get_1dim(idx, C, W, H);
+  const int32_t w = get_2dim(idx, C, W, H);
+  const int32_t h = get_3dim(idx, C, W, H);
+
+  if (b >= B || c >= C / group_size || w >= W || h >= H) {
+    return;
+  }
+
+  int32_t idxs[MAX_GROUP_SIZE];
+  scalar_t vals[MAX_GROUP_SIZE];
+
+  for (int32_t i = 0; i < group_size / UNROLL; i++) {
+    float4 rand = curand_uniform4(state);
+    for (int32_t j = 0; j < UNROLL; j++) {
+      int pos = i * UNROLL + j;
+      int32_t ci = c * group_size + pos;
+      idxs[i] = idx_4d(b, ci, w, h, C, W, H);
+      // vals[i] = abs(x[idxs[i]] + (&rand.x)[j]); // TODO: make in correct scale
+      vals[i] = abs(x[idxs[i]]);
+    }
+  }
+
+  bubble_sort<scalar_t>(vals, idxs, group_size);
+
+  for (int32_t i = 0; i < nonzero; i++) {
+    y[idxs[i]] = x[idxs[i]];
+  }
+}
+
+
 
 template <typename scalar_t>
 __global__ void
 prune_kernel(const scalar_t *__restrict__ x, scalar_t *__restrict__ y,
-             at::PhiloxCudaState philox_args,
-             const int32_t prune_type, const int32_t prune_dim,
+             at::PhiloxCudaState philox_args, const int32_t prune_type, 
              const int32_t nonzero, const int32_t group_size, const int32_t B,
              const int32_t C, const int32_t W, const int32_t H) {
   const int32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -216,22 +179,19 @@ prune_kernel(const scalar_t *__restrict__ x, scalar_t *__restrict__ y,
   curand_init(std::get<0>(seeds), idx, std::get<1>(seeds), &state);
 
   // Select proper pruning algorithm and call it
-  if (prune_type == PRUNE_MAX && prune_dim == 0) {
-    prune_max_batchwise<scalar_t>(x, y, nonzero, group_size, B, C, W, H);
-  } else if (prune_type == PRUNE_MAX && prune_dim == 1) {
-    prune_max_channelwise<scalar_t>(x, y, nonzero, group_size, B, C, W, H);
-  } else if (prune_type == PRUNE_RND && prune_dim == 0) {
-    prune_rnd_batchwise<scalar_t>(x, y, &state, nonzero, group_size, B, C, W, H);
-  } else if (prune_type == PRUNE_RND && prune_dim == 1) {
-    prune_rnd_channelwise<scalar_t>(x, y, &state, nonzero, group_size, B, C, W, H);
+  if (prune_type == PRUNE_TYPE_MAX) {
+    prune_max<scalar_t>(x, y, nonzero, group_size, B, C, W, H);
+  } else if (prune_type == PRUNE_TYPE_RND) {
+    prune_rnd<scalar_t>(x, y, &state, nonzero, group_size, B, C, W, H);
+  } else if (prune_type == PRUNE_TYPE_STC) {
+    prune_stc<scalar_t>(x, y, &state, nonzero, group_size, B, C, W, H);
   }
 }
 } // namespace
 
 
 at::Tensor prune_cuda(const at::Tensor x, const int prune_type,
-                      const int prune_dim, const int nonzero,
-                      const int group_size) {
+                      const int nonzero, const int group_size) {
   const auto B = x.size(0);
   const auto C = x.size(1);
   const auto W = x.size(2);
@@ -253,9 +213,8 @@ at::Tensor prune_cuda(const at::Tensor x, const int prune_type,
   AT_DISPATCH_FLOATING_TYPES(x.type(), "prune_cuda", ([&] {
                                prune_kernel<scalar_t><<<blocks, threads>>>(
                                    x.data<scalar_t>(), y.data<scalar_t>(), 
-                                   rng_engine_inputs,
-                                   prune_type, prune_dim, nonzero, group_size,
-                                   B, C, W, H);
+                                   rng_engine_inputs, prune_type, nonzero,
+                                   group_size, B, C, W, H);
                              }));
                          
   return y;

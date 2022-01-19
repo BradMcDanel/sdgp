@@ -6,12 +6,9 @@ from torch.utils.cpp_extension import load
 
 from utils import make_pair, nongrad_param
 
-PRUNE_DIM_BATCH = 0
-PRUNE_DIM_CHANNEL = 1
-
 PRUNE_TYPE_MAX = 0
 PRUNE_TYPE_RND = 1
-
+PRUNE_TYPE_STC = 2
 
 
 cudnn_convolution = load(name="cudnn_convolution",
@@ -47,19 +44,14 @@ class GSRConv2dFunc(Function):
         conf = ctx.conf
         input_grad = weight_grad = bias_grad = stride_grad = padding_grad = dilation_grad = groups_grad = gsr_params_grad = None
         if ctx.needs_input_grad[0]:
-            # pruning across channel dimension
+            # pruning activation gradients
             prune_grad_output = prune.prune(grad_output, conf['prune_type'],
-                                            PRUNE_DIM_CHANNEL, conf['nonzero'],
-                                            conf['groupsize'])
+                                            conf['nonzero'], conf['groupsize'])
             input_grad = conv_back_input(input.shape, weight, prune_grad_output,
                                          conf["stride"], conf["padding"],
                                          conf["dilation"], conf["groups"],
                                          False, False, False)
         if ctx.needs_input_grad[1]:
-            # pruning across batch dimension
-            # prune_grad_output = prune.prune(grad_output, conf['prune_type'], 
-            #                                 PRUNE_DIM_BATCH, conf['nonzero'],
-            #                                 conf['groupsize'])
             weight_grad = conv_back_weight(input, weight.shape, grad_output,
                                            conf["stride"], conf["padding"],
                                            conf["dilation"], conf["groups"],

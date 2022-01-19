@@ -6,7 +6,6 @@
 
 at::Tensor prune_cuda(const at::Tensor x,
                       const int prune_type,
-                      const int prune_dim,
                       const int nonzero,
                       const int group_size);
 
@@ -23,11 +22,10 @@ at::Tensor prune_cuda(const at::Tensor x,
 
 at::Tensor prune(const at::Tensor x,
                  const int prune_type,
-                 const int prune_dim,
                  const int nonzero,
                  const int group_size) {
   CHECK_INPUT(x);
-  return prune_cuda(x, prune_type, prune_dim, nonzero, group_size);
+  return prune_cuda(x, prune_type, nonzero, group_size);
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
