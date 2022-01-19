@@ -210,12 +210,12 @@ at::Tensor prune_cuda(const at::Tensor x, const int prune_type,
     rng_engine_inputs = gen->philox_cuda_state(counter_offset);
   }
 
-  AT_DISPATCH_FLOATING_TYPES(x.type(), "prune_cuda", ([&] {
-                               prune_kernel<scalar_t><<<blocks, threads>>>(
+  AT_DISPATCH_FLOATING_TYPES_AND_HALF(x.type(), "prune_cuda", ([&] {
+                                 prune_kernel<scalar_t><<<blocks, threads>>>(
                                    x.data<scalar_t>(), y.data<scalar_t>(), 
                                    rng_engine_inputs, prune_type, nonzero,
                                    group_size, B, C, W, H);
-                             }));
+                                 }));
                          
   return y;
 }

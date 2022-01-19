@@ -24,7 +24,6 @@ at::Tensor prune(const at::Tensor x,
                  const int prune_type,
                  const int nonzero,
                  const int group_size) {
-  CHECK_INPUT(x);
   return prune_cuda(x, prune_type, nonzero, group_size);
 }
 

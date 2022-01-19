@@ -3,6 +3,8 @@ from torch.autograd import Function
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.cpp_extension import load
+from torch.cuda.amp import custom_fwd, custom_bwd
+from torch import autocast
 
 from utils import make_pair, nongrad_param
 
@@ -23,6 +25,7 @@ prune = load(name="prune", sources=["kernels/prune.cpp", "kernels/prune_kernel.c
 
 class GSRConv2dFunc(Function):
     @staticmethod
+    @custom_fwd(cast_inputs=torch.float16)
     def forward(ctx, input, weight, bias, stride, padding, dilation, groups,
                 gsr_params):
         ctx.save_for_backward(input, weight, bias)
@@ -39,8 +42,9 @@ class GSRConv2dFunc(Function):
                         False, False)
 
     @staticmethod
+    @custom_bwd
     def backward(ctx, grad_output):
-        input, weight, bias = ctx.saved_variables
+        input, weight, bias = ctx.saved_tensors
         conf = ctx.conf
         input_grad = weight_grad = bias_grad = stride_grad = padding_grad = dilation_grad = groups_grad = gsr_params_grad = None
         if ctx.needs_input_grad[0]:
@@ -86,13 +90,13 @@ class GSRConv2d(nn.Module):
 
         # initialize weight
         shape = out_channels, in_channels // groups, *self.kernel_size
-        self.weight = nn.Parameter(torch.Tensor(*shape))
+        self.weight = nn.Parameter(torch.zeros(*shape))
         nn.init.kaiming_uniform_(self.weight, nonlinearity='relu')
 
         if bias:
-            self.bias = nn.Parameter(torch.Tensor(out_channels).zero_())
+            self.bias = nn.Parameter(torch.zeros(out_channels))
         else:
-            self.bias = nn.Parameter(torch.Tensor(out_channels).zero_(),
+            self.bias = nn.Parameter(torch.zeros(out_channels),
                                      requires_grad=False)
 
         if padding_mode != 'zeros':

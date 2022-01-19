@@ -8,7 +8,7 @@ prune = load(name="prune", sources=["kernels/prune.cpp", "kernels/prune_kernel.c
 
 x = torch.randn(4, 8, 1, 1).cuda()
 
-y = prune.prune(x, gsr.PRUNE_TYPE_STC, 2, 4)
+y = prune.prune(x, gsr.PRUNE_TYPE_MAX, 2, 4)
 print(x[-1, :4, -1, -1])
 print(y[-1, :4, -1, -1])
 # print(y)
