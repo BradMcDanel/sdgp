@@ -1,1 +1,1 @@
-# Structured Activation Gradient Pruning (SAGP)
+# Structured Data Gradient Pruning (SDGP)
