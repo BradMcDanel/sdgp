@@ -15,7 +15,6 @@ from tqdm import tqdm
 import os
 import time
 import json
-from uuid import uuid4
 from typing import List
 from pathlib import Path
 from argparse import ArgumentParser
@@ -32,6 +31,9 @@ from ffcv.transforms import ToTensor, ToDevice, Squeeze, NormalizeImage, \
 from ffcv.fields.rgb_image import CenterCropRGBImageDecoder, \
     RandomResizedCropRGBImageDecoder
 from ffcv.fields.basics import IntDecoder
+
+import resnet
+import gsr
 
 Section('model', 'model details').params(
     arch=Param(And(str, OneOf(models.__dir__())), default='resnet18'),
@@ -80,13 +82,20 @@ Section('training', 'training hyper param stuff').params(
     epochs=Param(int, 'number of epochs', default=30),
     label_smoothing=Param(float, 'label smoothing parameter', default=0.1),
     distributed=Param(int, 'is distributed?', default=0),
-    use_blurpool=Param(int, 'use blurpool?', default=0)
+    use_blurpool=Param(int, 'use blurpool?', default=0),
+    save_first_epoch=Param(int, 'save model after first epoch', default=0)
 )
 
 Section('dist', 'distributed training options').params(
     world_size=Param(int, 'number gpus', default=1),
     address=Param(str, 'address', default='localhost'),
     port=Param(str, 'port', default='12355')
+)
+
+Section('gsr', 'gsr related stuff').params(
+    nonzero=Param(int, 'number of nonzeros per group', required=True),
+    groupsize=Param(int, 'number of items per group', required=True),
+    prune_type=Param(str, 'type of pruning algorithm', required=True),
 )
 
 IMAGENET_MEAN = np.array([0.485, 0.456, 0.406]) * 255
@@ -130,8 +139,6 @@ class ImageNetTrainer:
     def __init__(self, gpu, distributed):
         self.all_params = get_current_config()
         self.gpu = gpu
-
-        self.uid = str(uuid4())
 
         if distributed:
             self.setup_distributed()
@@ -293,7 +300,8 @@ class ImageNetTrainer:
 
     @param('training.epochs')
     @param('logging.log_level')
-    def train(self, epochs, log_level):
+    @param('training.save_first_epoch')
+    def train(self, epochs, log_level, save_first_epoch):
         for epoch in range(epochs):
             res = self.get_resolution(epoch)
             self.decoder.output_size = (res, res)
@@ -306,6 +314,9 @@ class ImageNetTrainer:
                 }
 
                 self.eval_and_log(extra_dict)
+
+            if epoch == 0 and self.gpu == 0 and save_first_epoch == 1:
+                ch.save(self.model.state_dict(), self.log_folder / 'epoch1_weights.pt')
 
         self.eval_and_log({'epoch':epoch})
         if self.gpu == 0:
@@ -325,13 +336,18 @@ class ImageNetTrainer:
 
         return stats
 
-    @param('model.arch')
-    @param('model.pretrained')
     @param('training.distributed')
     @param('training.use_blurpool')
-    def create_model_and_scaler(self, arch, pretrained, distributed, use_blurpool):
+    @param('model.arch')
+    @param('gsr.prune_type')
+    @param('gsr.nonzero')
+    @param('gsr.groupsize')
+    def create_model_and_scaler(self, distributed, use_blurpool, arch, prune_type,
+                                nonzero, groupsize):
         scaler = GradScaler()
-        model = getattr(models, arch)(pretrained=pretrained)
+        model = getattr(models, arch)(pretrained=False)
+        model = gsr.convert_model(model, prune_type, nonzero, groupsize)
+
         def apply_blurpool(mod: ch.nn.Module):
             for (name, child) in mod.named_children():
                 if isinstance(child, ch.nn.Conv2d) and (np.max(child.stride) > 1 and child.in_channels >= 16): 
@@ -427,7 +443,7 @@ class ImageNetTrainer:
         }
 
         if self.gpu == 0:
-            folder = (Path(folder) / str(self.uid)).absolute()
+            folder = Path(folder).absolute()
             folder.mkdir(parents=True)
 
             self.log_folder = folder

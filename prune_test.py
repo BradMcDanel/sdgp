@@ -6,9 +6,10 @@ import gsr
 prune = load(name="prune", sources=["kernels/prune.cpp", "kernels/prune_kernel.cu"],
              verbose=False)
 
-x = torch.randn(4, 8, 1, 1).cuda()
+x = torch.randn(4, 8, 16, 16).cuda().to(memory_format=torch.channels_last)
+print(x.sum(dim=2))
 
-y = prune.prune(x, gsr.PRUNE_TYPE_MAX, 2, 4)
+y = prune.prune(x, gsr.PRUNE_TYPE_RND, 2, 4)
 print(x[-1, :4, -1, -1])
 print(y[-1, :4, -1, -1])
 # print(y)

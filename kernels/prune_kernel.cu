@@ -48,24 +48,15 @@ __device__ void bubble_sort(scalar_t *__restrict__ vals,
 template <typename scalar_t>
 __device__ void
 prune_max(const scalar_t *__restrict__ x, scalar_t *__restrict__ y,
-          const int32_t nonzero, const int32_t group_size, const int32_t B,
-          const int32_t C, const int32_t W, const int32_t H) {
+          const int32_t nonzero, const int32_t group_size) {
   const int32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-  const int32_t b = get_0dim(idx, C, W, H);
-  const int32_t c = get_1dim(idx, C, W, H);
-  const int32_t w = get_2dim(idx, C, W, H);
-  const int32_t h = get_3dim(idx, C, W, H);
 
-  if (b >= B || c >= C / group_size || w >= W || h >= H) {
-    return;
-  }
-
+  int32_t offset = idx * group_size;
   int32_t idxs[MAX_GROUP_SIZE];
   scalar_t vals[MAX_GROUP_SIZE];
 
   for (int32_t i = 0; i < group_size; i++) {
-    int32_t ci = c * group_size + i;
-    idxs[i] = idx_4d(b, ci, w, h, C, W, H);
+    idxs[i] = offset + i;
     vals[i] = abs(x[idxs[i]]);
   }
 
@@ -80,24 +71,15 @@ template <typename scalar_t>
 __device__ void
 prune_rnd(const scalar_t *__restrict__ x, scalar_t *__restrict__ y,
           curandStatePhilox4_32_10_t *state, const int32_t nonzero,
-          const int32_t group_size, const int32_t B, const int32_t C,
-          const int32_t W, const int32_t H) {
+          const int32_t group_size) {
   const int32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-  const int32_t b = get_0dim(idx, C, W, H);
-  const int32_t c = get_1dim(idx, C, W, H);
-  const int32_t w = get_2dim(idx, C, W, H);
-  const int32_t h = get_3dim(idx, C, W, H);
-
-  if (b >= B || c >= C / group_size || w >= W || h >= H) {
-    return;
-  }
 
   int32_t idxs[MAX_GROUP_SIZE];
+  int32_t offset = idx * group_size;
 
   // Randomly select nonzero elements
   for (int32_t i = 0; i < group_size; i++) {
-    int32_t ci = c * group_size + i;
-    idxs[i] = idx_4d(b, ci, w, h, C, W, H);
+    idxs[i] = offset + i;
   }
 
   // Randomly shuffle the idxs
@@ -122,69 +104,26 @@ prune_rnd(const scalar_t *__restrict__ x, scalar_t *__restrict__ y,
   }
 }
 
-
-template <typename scalar_t>
-__device__ void
-prune_stc(const scalar_t *__restrict__ x, scalar_t *__restrict__ y,
-          curandStatePhilox4_32_10_t *state, const int32_t nonzero,
-          const int32_t group_size, const int32_t B, const int32_t C,
-          const int32_t W, const int32_t H) {
-  const int32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-  const int32_t b = get_0dim(idx, C, W, H);
-  const int32_t c = get_1dim(idx, C, W, H);
-  const int32_t w = get_2dim(idx, C, W, H);
-  const int32_t h = get_3dim(idx, C, W, H);
-
-  if (b >= B || c >= C / group_size || w >= W || h >= H) {
-    return;
-  }
-
-  int32_t idxs[MAX_GROUP_SIZE];
-  scalar_t vals[MAX_GROUP_SIZE];
-
-  for (int32_t i = 0; i < group_size / UNROLL; i++) {
-    float4 rand = curand_uniform4(state);
-    for (int32_t j = 0; j < UNROLL; j++) {
-      int pos = i * UNROLL + j;
-      int32_t ci = c * group_size + pos;
-      idxs[i] = idx_4d(b, ci, w, h, C, W, H);
-      // vals[i] = abs(x[idxs[i]] + (&rand.x)[j]); // TODO: make in correct scale
-      vals[i] = abs(x[idxs[i]]);
-    }
-  }
-
-  bubble_sort<scalar_t>(vals, idxs, group_size);
-
-  for (int32_t i = 0; i < nonzero; i++) {
-    y[idxs[i]] = x[idxs[i]];
-  }
-}
-
-
-
 template <typename scalar_t>
 __global__ void
 prune_kernel(const scalar_t *__restrict__ x, scalar_t *__restrict__ y,
              at::PhiloxCudaState philox_args, const int32_t prune_type, 
-             const int32_t nonzero, const int32_t group_size, const int32_t B,
-             const int32_t C, const int32_t W, const int32_t H) {
+             const int32_t nonzero, const int32_t group_size, const int32_t size) {
   const int32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-  const int32_t c = get_1dim(idx, C, W, H);
 
-  if (idx >= B * W * H * C) {
-    return;
+  if (idx > size) {
+     return;
   }
+
   auto seeds = at::cuda::philox::unpack(philox_args);
   curandStatePhilox4_32_10_t state;
   curand_init(std::get<0>(seeds), idx, std::get<1>(seeds), &state);
 
   // Select proper pruning algorithm and call it
   if (prune_type == PRUNE_TYPE_MAX) {
-    prune_max<scalar_t>(x, y, nonzero, group_size, B, C, W, H);
+    prune_max<scalar_t>(x, y, nonzero, group_size);
   } else if (prune_type == PRUNE_TYPE_RND) {
-    prune_rnd<scalar_t>(x, y, &state, nonzero, group_size, B, C, W, H);
-  } else if (prune_type == PRUNE_TYPE_STC) {
-    prune_stc<scalar_t>(x, y, &state, nonzero, group_size, B, C, W, H);
+    prune_rnd<scalar_t>(x, y, &state, nonzero, group_size);
   }
 }
 } // namespace
@@ -196,7 +135,7 @@ at::Tensor prune_cuda(const at::Tensor x, const int prune_type,
   const auto C = x.size(1);
   const auto W = x.size(2);
   const auto H = x.size(3);
-  const auto size = B * C * W * H;
+  const auto size = B * W * H * (C / group_size);
   auto y = at::zeros_like(x);
   const int threads = 256;
   const int blocks = (size + threads - 1) / threads;
@@ -214,7 +153,7 @@ at::Tensor prune_cuda(const at::Tensor x, const int prune_type,
                                  prune_kernel<scalar_t><<<blocks, threads>>>(
                                    x.data<scalar_t>(), y.data<scalar_t>(), 
                                    rng_engine_inputs, prune_type, nonzero,
-                                   group_size, B, C, W, H);
+                                   group_size, size);
                                  }));
                          
   return y;

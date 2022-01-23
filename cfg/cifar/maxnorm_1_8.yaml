@@ -1,5 +1,4 @@
 data:
-  gpu: 0
   num_workers: 8
   train_dataset: /data/datasets/cifar/cifar_train.beton
   val_dataset: /data/datasets/cifar/cifar_test.beton
@@ -9,8 +8,11 @@ training:
   lr: 0.5
   momentum: 0.9
   lr_peak_epoch: 5
-  momentum: 0.9
   weight_decay: 5e-4
   label_smoothing: 0.1
   lr_tta: true
   num_workers: 8
+gsr:
+  nonzero: 1
+  groupsize: 8
+  prune_type: 'maxnorm'

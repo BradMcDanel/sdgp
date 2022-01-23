@@ -108,6 +108,7 @@ class ResNet(nn.Module):
         self.layer3 = self._make_layer(block, 256, num_blocks[2], stride=2)
         self.layer4 = self._make_layer(block, 512, num_blocks[3], stride=2)
         self.linear = nn.Linear(512*block.expansion, num_classes)
+        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
 
     def _make_layer(self, block, planes, num_blocks, stride):
         strides = [stride] + [1]*(num_blocks-1)
@@ -123,7 +124,7 @@ class ResNet(nn.Module):
         out = self.layer2(out)
         out = self.layer3(out)
         out = self.layer4(out)
-        out = F.avg_pool2d(out, 4)
+        out = self.avgpool(out)
         out = out.view(out.size(0), -1)
         return self.linear(out)
 
@@ -146,6 +147,8 @@ class GSRResNet(nn.Module):
         self.layer4 = self._make_layer(gsr_params, block, 512, num_blocks[3],
                                        stride=2)
         self.linear = nn.Linear(512*block.expansion, num_classes)
+        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
+
 
     def _make_layer(self, gsr_params, block, planes, num_blocks, stride):
         strides = [stride] + [1]*(num_blocks-1)
@@ -161,7 +164,7 @@ class GSRResNet(nn.Module):
         out = self.layer2(out)
         out = self.layer3(out)
         out = self.layer4(out)
-        out = F.avg_pool2d(out, 4)
+        out = self.avgpool(out)
         out = out.view(out.size(0), -1)
         return self.linear(out)
 
@@ -171,13 +174,13 @@ class GSRResNet(nn.Module):
                 m.show_params()
 
 
-def gsr_resnet18(gsr_params, block=None):
+def gsr_resnet18(gsr_params, block=None, num_classes=10):
     if block == None:
         block = GSRBasicBlock
     
-    return GSRResNet(gsr_params, block, [2, 2, 2, 2])
+    return GSRResNet(gsr_params, block, [2, 2, 2, 2], num_classes)
 
-def resnet18(block=None):
+def resnet18(block=None, num_classes=10):
     if block == None:
         block = BasicBlock
-    return ResNet(block, [2, 2, 2, 2])
+    return ResNet(block, [2, 2, 2, 2], num_classes)

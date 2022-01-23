@@ -4,7 +4,6 @@ import importlib
 import torch
 import utils
 import matplotlib.pyplot as plt
-import resnet
 
 def make_cfg(path):
     mod_name = '.'.join(path.replace('/', '.').split('.')[:-1])

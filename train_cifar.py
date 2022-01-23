@@ -5,9 +5,10 @@ import torch.nn.functional as F
 ch.backends.cudnn.benchmark = True
 ch.autograd.profiler.emit_nvtx(False)
 ch.autograd.profiler.profile(False)
+ch.autograd.set_detect_anomaly = True 
+
 
 import torchvision
-from torchvision import models
 import torchmetrics
 import numpy as np
 from tqdm import tqdm
@@ -15,7 +16,6 @@ from tqdm import tqdm
 import os
 import time
 import json
-from uuid import uuid4
 from typing import List
 from pathlib import Path
 from argparse import ArgumentParser
@@ -30,18 +30,11 @@ from ffcv.loader import Loader, OrderOption
 from ffcv.transforms import RandomHorizontalFlip, Cutout, \
     RandomTranslate, Convert, ToDevice, ToTensor, ToTorchImage
 from ffcv.transforms.common import Squeeze
-from ffcv.fields.rgb_image import CenterCropRGBImageDecoder, \
-    RandomResizedCropRGBImageDecoder
 from ffcv.fields.basics import IntDecoder
 from ffcv.fields.decoders import IntDecoder, SimpleRGBImageDecoder
 
 import gsr
-import resnet
-
-Section('model', 'model details').params(
-    arch=Param(And(str, OneOf(models.__dir__())), default='resnet18'),
-    pretrained=Param(int, 'is pretrained? (1/0)', default=0)
-)
+import models
 
 Section('data', 'data related stuff').params(
     train_dataset=Param(str, '.dat file to use for training', required=True),
@@ -77,7 +70,11 @@ Section('training', 'training hyper param stuff').params(
     label_smoothing=Param(float, 'label smoothing parameter', default=0.1),
 )
 
-
+Section('gsr', 'gsr related stuff').params(
+    nonzero=Param(int, 'number of nonzeros per group', required=True),
+    groupsize=Param(int, 'number of items per group', required=True),
+    prune_type=Param(str, 'type of pruning algorithm', required=True),
+)
 
 
 CIFAR_MEAN = [125.307, 122.961, 113.8575]
@@ -104,11 +101,8 @@ def get_cyclic_lr(epoch, lr, epochs, lr_peak_epoch):
 
 
 class CifarTrainer:
-    def __init__(self, gpu=0):
+    def __init__(self):
         self.all_params = get_current_config()
-        self.gpu = gpu
-
-        self.uid = str(uuid4())
 
         self.train_loader = self.create_train_loader()
         self.val_loader = self.create_val_loader()
@@ -221,18 +215,15 @@ class CifarTrainer:
 
         return stats
 
-    @param('model.arch')
-    def create_model_and_scaler(self, arch):
+    @param('gsr.nonzero')
+    @param('gsr.groupsize')
+    @param('gsr.prune_type')
+    def create_model_and_scaler(self, nonzero, groupsize, prune_type):
         scaler = GradScaler()
-        gsr_params = {
-            'nonzero': 2,
-            'groupsize': 4,
-            'prune_type': gsr.PRUNE_TYPE_MAX,
-        }
-
-        model = resnet.gsr_resnet18(gsr_params=gsr_params)
+        model = models.cifar10_model()
+        model = gsr.convert_model(model, prune_type, nonzero, groupsize)
         model = model.to(memory_format=ch.channels_last)
-        model = model.to(self.gpu)
+        model = model.to('cuda')
 
         return model, scaler
 
@@ -310,11 +301,11 @@ class CifarTrainer:
     @param('logging.folder')
     def initialize_logger(self, folder):
         self.val_meters = {
-            'top_1': torchmetrics.Accuracy(compute_on_step=False).to(self.gpu),
-            'loss': MeanScalarMetric(compute_on_step=False).to(self.gpu)
+            'top_1': torchmetrics.Accuracy(compute_on_step=False).to('cuda'),
+            'loss': MeanScalarMetric(compute_on_step=False).to('cuda')
         }
 
-        folder = (Path(folder) / str(self.uid)).absolute()
+        folder = Path(folder).absolute()
         folder.mkdir(parents=True)
 
         self.log_folder = folder
@@ -367,6 +358,6 @@ def make_config(quiet=False):
 
 if __name__ == "__main__":
     make_config()
-    trainer = CifarTrainer(gpu=0)
+    trainer = CifarTrainer()
     trainer.train()
 
