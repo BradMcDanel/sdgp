@@ -57,18 +57,9 @@ def prune_wrapper(x, prune_type, nonzero, groupsize):
         y = prune.prune(x, PRUNE_TYPE_MAX, nonzero, groupsize)
         x_sum = torch.abs(x).sum(dim=(2, 3), keepdim=True)
         y_sum = torch.abs(y).sum(dim=(2, 3), keepdim=True) + FP16_EPS
-        # print('BEFORE')
-        # print(x_sum[0, :, 0, 0])
-        # print(y_sum[0, :, 0, 0])
         ratio = x_sum / y_sum
-        # print(ratio[0, :, 0, 0])
         y = y * ratio
-        # print('AFTER')
-        # print(x[0, 0, :4, :4])
-        # print(y[0, 0, :4, :4])
         y_sum = torch.abs(y).sum(dim=(2, 3), keepdim=True)
-        # print(x_sum[0, :, 0, 0])
-        # print(y_sum[0, :, 0, 0])
         return y
     else:
         raise ValueError('prune_type must be "max" or "maxnorm"')

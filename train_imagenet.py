@@ -32,8 +32,7 @@ from ffcv.fields.rgb_image import CenterCropRGBImageDecoder, \
     RandomResizedCropRGBImageDecoder
 from ffcv.fields.basics import IntDecoder
 
-import resnet
-import gsr
+import sdgp
 
 Section('model', 'model details').params(
     arch=Param(And(str, OneOf(models.__dir__())), default='resnet18'),
@@ -92,7 +91,7 @@ Section('dist', 'distributed training options').params(
     port=Param(str, 'port', default='12355')
 )
 
-Section('gsr', 'gsr related stuff').params(
+Section('sdgp', 'sdgp related stuff').params(
     nonzero=Param(int, 'number of nonzeros per group', required=True),
     groupsize=Param(int, 'number of items per group', required=True),
     prune_type=Param(str, 'type of pruning algorithm', required=True),
@@ -339,15 +338,13 @@ class ImageNetTrainer:
     @param('training.distributed')
     @param('training.use_blurpool')
     @param('model.arch')
-    @param('gsr.prune_type')
-    @param('gsr.nonzero')
-    @param('gsr.groupsize')
+    @param('sdgp.prune_type')
+    @param('sdgp.nonzero')
+    @param('sdgp.groupsize')
     def create_model_and_scaler(self, distributed, use_blurpool, arch, prune_type,
                                 nonzero, groupsize):
         scaler = GradScaler()
         model = getattr(models, arch)(pretrained=False)
-        model = gsr.convert_model(model, prune_type, nonzero, groupsize)
-
         def apply_blurpool(mod: ch.nn.Module):
             for (name, child) in mod.named_children():
                 if isinstance(child, ch.nn.Conv2d) and (np.max(child.stride) > 1 and child.in_channels >= 16): 
@@ -355,6 +352,9 @@ class ImageNetTrainer:
                 else: apply_blurpool(child)
         if use_blurpool: apply_blurpool(model)
 
+        if nonzero < groupsize:
+            model = sdgp.convert_model(model, prune_type, nonzero, groupsize)
+        
         model = model.to(memory_format=ch.channels_last)
         model = model.to(self.gpu)
 

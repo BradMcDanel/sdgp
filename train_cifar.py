@@ -33,7 +33,7 @@ from ffcv.transforms.common import Squeeze
 from ffcv.fields.basics import IntDecoder
 from ffcv.fields.decoders import IntDecoder, SimpleRGBImageDecoder
 
-import gsr
+import sdgp
 import models
 
 Section('data', 'data related stuff').params(
@@ -70,7 +70,7 @@ Section('training', 'training hyper param stuff').params(
     label_smoothing=Param(float, 'label smoothing parameter', default=0.1),
 )
 
-Section('gsr', 'gsr related stuff').params(
+Section('sdgp', 'sdgp related stuff').params(
     nonzero=Param(int, 'number of nonzeros per group', required=True),
     groupsize=Param(int, 'number of items per group', required=True),
     prune_type=Param(str, 'type of pruning algorithm', required=True),
@@ -148,14 +148,14 @@ class CifarTrainer:
     @param('training.batch_size')
     @param('data.in_memory')
     def create_train_loader(self, train_dataset, num_workers, batch_size, in_memory):
-        label_pipeline: List[Operation] = [IntDecoder(), ToTensor(), ToDevice('cuda:0'), Squeeze()]
+        label_pipeline: List[Operation] = [IntDecoder(), ToTensor(), ToDevice('cuda'), Squeeze()]
         image_pipeline: List[Operation] = [SimpleRGBImageDecoder()]
         image_pipeline.extend([
             RandomHorizontalFlip(),
             RandomTranslate(padding=2, fill=tuple(map(int, CIFAR_MEAN))),
             Cutout(4, tuple(map(int, CIFAR_MEAN))),
             ToTensor(),
-            ToDevice('cuda:0', non_blocking=True),
+            ToDevice('cuda', non_blocking=True),
             ToTorchImage(),
             Convert(ch.float16),
             torchvision.transforms.Normalize(CIFAR_MEAN, CIFAR_STD),
@@ -171,11 +171,11 @@ class CifarTrainer:
     @param('data.num_workers')
     @param('validation.batch_size')
     def create_val_loader(self, val_dataset, num_workers, batch_size):
-        label_pipeline: List[Operation] = [IntDecoder(), ToTensor(), ToDevice('cuda:0'), Squeeze()]
+        label_pipeline: List[Operation] = [IntDecoder(), ToTensor(), ToDevice('cuda'), Squeeze()]
         image_pipeline: List[Operation] = [SimpleRGBImageDecoder()]
         image_pipeline.extend([
             ToTensor(),
-            ToDevice('cuda:0', non_blocking=True),
+            ToDevice('cuda', non_blocking=True),
             ToTorchImage(),
             Convert(ch.float16),
             torchvision.transforms.Normalize(CIFAR_MEAN, CIFAR_STD),
@@ -215,13 +215,13 @@ class CifarTrainer:
 
         return stats
 
-    @param('gsr.nonzero')
-    @param('gsr.groupsize')
-    @param('gsr.prune_type')
+    @param('sdgp.nonzero')
+    @param('sdgp.groupsize')
+    @param('sdgp.prune_type')
     def create_model_and_scaler(self, nonzero, groupsize, prune_type):
         scaler = GradScaler()
         model = models.cifar10_model()
-        model = gsr.convert_model(model, prune_type, nonzero, groupsize)
+        model = sdgp.convert_model(model, prune_type, nonzero, groupsize)
         model = model.to(memory_format=ch.channels_last)
         model = model.to('cuda')
 

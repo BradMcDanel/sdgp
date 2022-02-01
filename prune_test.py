@@ -3,6 +3,7 @@ import torch
 from torch.utils.cpp_extension import load
 import gsr
 
+
 prune = load(name="prune", sources=["kernels/prune.cpp", "kernels/prune_kernel.cu"],
              verbose=False)
 
