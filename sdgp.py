@@ -161,3 +161,10 @@ if __name__ == '__main__':
     import torchvision
     resnet18 = torchvision.models.resnet18(pretrained=False)
     model = convert_model(resnet18, PRUNE_TYPE_MAX, 2, 4)
+
+    x = torch.randn(4, 8, 16, 16).cuda().to(memory_format=torch.channels_last)
+    print(x.sum(dim=2))
+
+    y = prune.prune(x, PRUNE_TYPE_RND, 2, 4)
+    print(x[-1, :4, -1, -1])
+    print(y[-1, :4, -1, -1])
