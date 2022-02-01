@@ -3,7 +3,6 @@ from torch.autograd import Function
 import torch.nn as nn
 from torch.utils.cpp_extension import load
 from torch.cuda.amp import custom_fwd, custom_bwd
-import matplotlib.pyplot as plt
 
 from utils import make_pair, nongrad_param
 
